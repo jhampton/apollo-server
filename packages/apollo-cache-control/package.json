@@ -1,56 +1,20 @@
 {
   "name": "apollo-cache-control",
-  "version": "0.2.0",
+  "version": "0.11.1",
   "description": "A GraphQL extension for cache control",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "scripts": {
-    "clean": "rm -rf dist",
-    "compile": "tsc",
-    "coverage": "jest --coverage",
-    "prepublish": "npm run clean && npm run compile",
-    "test": "jest --verbose",
-    "watch": "tsc -w"
-  },
   "license": "MIT",
   "repository": "apollographql/apollo-cache-control-js",
-  "author": "Martijn Walraven <martijn@martijnwalraven.com>",
+  "author": "Apollo <opensource@apollographql.com>",
   "engines": {
     "node": ">=6.0"
   },
   "dependencies": {
-    "apollo-server-env": "2.0.0",
-    "graphql-extensions": "0.1.0"
+    "apollo-server-env": "file:../apollo-server-env",
+    "apollo-server-plugin-base": "file:../apollo-server-plugin-base"
   },
   "peerDependencies": {
-    "graphql": "0.10.x - 0.13.x"
-  },
-  "devDependencies": {
-    "graphql-tools": "3.1.1"
-  },
-  "jest": {
-    "testEnvironment": "node",
-    "setupFiles": [
-      "<rootDir>/node_modules/apollo-server-env/dist/index.js"
-    ],
-    "transform": {
-      "^.+\\.(ts|js)$": "ts-jest"
-    },
-    "moduleFileExtensions": [
-      "ts",
-      "js",
-      "json"
-    ],
-    "testRegex": "src/__tests__/.*$",
-    "testPathIgnorePatterns": [
-      "<rootDir>/node_modules/",
-      "<rootDir>/lib/",
-      "test-utils"
-    ],
-    "globals": {
-      "ts-jest": {
-        "skipBabel": true
-      }
-    }
+    "graphql": "^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0"
   }
 }

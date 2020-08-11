@@ -5,13 +5,20 @@ import {
 } from 'apollo-server-core';
 
 import { Request, Response, URL } from 'apollo-server-env';
+import { ValueOrPromise } from 'apollo-server-types';
 
 // Design principles:
 // - You can issue a GET or POST with your query.
 // - simple, fast and secure
 //
 
-export function graphqlCloudflare(options: GraphQLOptions) {
+export interface CloudflareOptionsFunction {
+  (req?: Request): ValueOrPromise<GraphQLOptions>;
+}
+
+export function graphqlCloudflare(
+  options: GraphQLOptions | CloudflareOptionsFunction,
+) {
   if (!options) {
     throw new Error('Apollo Server requires options.');
   }
@@ -47,14 +54,8 @@ export function graphqlCloudflare(options: GraphQLOptions) {
 
         const res = new Response(error.message, {
           status: error.statusCode,
-          headers: { 'content-type': 'application/json' },
+          headers: error.headers,
         });
-
-        if (error.headers) {
-          Object.keys(error.headers).forEach(header => {
-            res.headers[header] = error.headers[header];
-          });
-        }
 
         return res;
       },

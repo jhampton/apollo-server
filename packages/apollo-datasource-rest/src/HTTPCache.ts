@@ -2,11 +2,27 @@ import { fetch, Request, Response, Headers } from 'apollo-server-env';
 
 import CachePolicy = require('http-cache-semantics');
 
-import { KeyValueCache, InMemoryLRUCache } from 'apollo-server-caching';
+import {
+  KeyValueCache,
+  InMemoryLRUCache,
+  PrefixingKeyValueCache,
+} from 'apollo-server-caching';
 import { CacheOptions } from './RESTDataSource';
 
 export class HTTPCache {
-  constructor(private keyValueCache: KeyValueCache = new InMemoryLRUCache()) {}
+  private keyValueCache: KeyValueCache;
+  private httpFetch: typeof fetch;
+
+  constructor(
+    keyValueCache: KeyValueCache = new InMemoryLRUCache(),
+    httpFetch: typeof fetch = fetch,
+  ) {
+    this.keyValueCache = new PrefixingKeyValueCache(
+      keyValueCache,
+      'httpcache:',
+    );
+    this.httpFetch = httpFetch;
+  }
 
   async fetch(
     request: Request,
@@ -19,9 +35,9 @@ export class HTTPCache {
   ): Promise<Response> {
     const cacheKey = options.cacheKey ? options.cacheKey : request.url;
 
-    const entry = await this.keyValueCache.get(`httpcache:${cacheKey}`);
+    const entry = await this.keyValueCache.get(cacheKey);
     if (!entry) {
-      const response = await fetch(request);
+      const response = await this.httpFetch(request);
 
       const policy = new CachePolicy(
         policyRequestFrom(request),
@@ -61,7 +77,7 @@ export class HTTPCache {
       const revalidationRequest = new Request(request, {
         headers: revalidationHeaders,
       });
-      const revalidationResponse = await fetch(revalidationRequest);
+      const revalidationResponse = await this.httpFetch(revalidationRequest);
 
       const { policy: revalidatedPolicy, modified } = policy.revalidatedPolicy(
         policyRequestFrom(revalidationRequest),
@@ -97,10 +113,19 @@ export class HTTPCache {
 
     let ttlOverride = cacheOptions && cacheOptions.ttl;
 
-    if (!ttlOverride && !(request.method === 'GET' && policy.storable()))
+    if (
+      // With a TTL override, only cache succesful responses but otherwise ignore method and response headers
+      !(ttlOverride && (policy._status >= 200 && policy._status <= 299)) &&
+      // Without an override, we only cache GET requests and respect standard HTTP cache semantics
+      !(request.method === 'GET' && policy.storable())
+    ) {
       return response;
+    }
 
-    let ttl = ttlOverride || Math.round(policy.timeToLive() / 1000);
+    let ttl =
+      ttlOverride === undefined
+        ? Math.round(policy.timeToLive() / 1000)
+        : ttlOverride;
     if (ttl <= 0) return response;
 
     // If a response can be revalidated, we don't want to remove it from the cache right after it expires.
@@ -116,7 +141,7 @@ export class HTTPCache {
       body,
     });
 
-    await this.keyValueCache.set(`httpcache:${cacheKey}`, entry, {
+    await this.keyValueCache.set(cacheKey, entry, {
       ttl,
     });
 
@@ -154,7 +179,7 @@ function policyResponseFrom(response: Response) {
 
 function headersToObject(headers: Headers) {
   const object = Object.create(null);
-  for (const [name, value] of headers as Headers) {
+  for (const [name, value] of headers) {
     object[name] = value;
   }
   return object;

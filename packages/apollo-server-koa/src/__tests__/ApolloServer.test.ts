@@ -1,16 +1,15 @@
-import * as Koa from 'koa';
+import http from 'http';
 
-import * as http from 'http';
-
-import * as request from 'request';
-import * as FormData from 'form-data';
-import * as fs from 'fs';
+import request from 'request';
+import FormData from 'form-data';
+import fs from 'fs';
 import { createApolloFetch } from 'apollo-fetch';
 
 import { gql, AuthenticationError, Config } from 'apollo-server-core';
-import { ApolloServer, ServerRegistration } from '../ApolloServer';
+import { ServerRegistration } from '../ApolloServer';
 
 import {
+  NODE_MAJOR_VERSION,
   testApolloServer,
   createServerInfo,
 } from 'apollo-server-integration-testsuite';
@@ -27,16 +26,27 @@ const resolvers = {
   },
 };
 
-describe('apollo-server-koa', () => {
-  let server;
-  let httpServer;
+// If we're on Node.js v6, skip this test, since `koa-bodyparser` has dropped
+// support for it and there was an important update to it which we brought in
+// through https://github.com/apollographql/apollo-server/pull/3229.
+// It's worth noting that Node.js v6 has been out of Long-Term-Support status
+// for four months and is no longer recommended by the Node.js Foundation.
+(
+  NODE_MAJOR_VERSION === 6 ?
+  describe.skip :
+  describe
+)('apollo-server-koa', () => {
+  const { ApolloServer } = require('../ApolloServer');
+  const Koa = require('koa');
+  let server: ApolloServer;
+  let httpServer: http.Server;
   testApolloServer(
     async options => {
       server = new ApolloServer(options);
       const app = new Koa();
       server.applyMiddleware({ app });
       httpServer = await new Promise<http.Server>(resolve => {
-        const s = app.listen({ port: 7777 }, () => resolve(s));
+        const s = app.listen({ port: 0 }, () => resolve(s));
       });
       return createServerInfo(server, httpServer);
     },
@@ -47,23 +57,33 @@ describe('apollo-server-koa', () => {
   );
 });
 
-describe('apollo-server-koa', () => {
-  let server: ApolloServer;
-
-  let app: Koa;
+// If we're on Node.js v6, skip this test, since `koa-bodyparser` has dropped
+// support for it and there was an important update to it which we brought in
+// through https://github.com/apollographql/apollo-server/pull/3229.
+// It's worth noting that Node.js v6 has been out of Long-Term-Support status
+// for four months and is no longer recommended by the Node.js Foundation.
+(
+  NODE_MAJOR_VERSION === 6 ?
+  describe.skip :
+  describe
+)('apollo-server-koa', () => {
+  const Koa = require('koa');
+  const { ApolloServer } = require('../ApolloServer');
+  let server: import('../ApolloServer').ApolloServer;
+  let app: import('koa');
   let httpServer: http.Server;
 
   async function createServer(
     serverOptions: Config,
-    options: Partial<ServerRegistration> = {},
+    options: Partial<import('../ApolloServer').ServerRegistration> = {},
   ) {
     server = new ApolloServer(serverOptions);
     app = new Koa();
 
     server.applyMiddleware({ ...options, app });
 
-    httpServer = await new Promise<http.Server>(resolve => {
-      const l = app.listen({ port: 4000 }, () => resolve(l));
+    httpServer = await new Promise(resolve => {
+      const l: http.Server = app.listen({ port: 0 }, () => resolve(l));
     });
 
     return createServerInfo(server, httpServer);
@@ -322,48 +342,47 @@ describe('apollo-server-koa', () => {
         });
       });
     });
-    describe('file uploads', () => {
-      it('enabled uploads', async () => {
-        // XXX This is currently a failing test for node 10
-        const NODE_VERSION = process.version.split('.');
-        const NODE_MAJOR_VERSION = parseInt(NODE_VERSION[0].replace(/^v/, ''));
-        if (NODE_MAJOR_VERSION === 10) return;
+    // NODE: Skip Node.js 6 and 14, but only because `graphql-upload`
+    // doesn't support them on the version we use.
+    ([6, 14].includes(NODE_MAJOR_VERSION) ? describe.skip : describe)(
+      'file uploads',
+      () => {
+        it('enabled uploads', async () => {
+          const { port } = await createServer({
+            typeDefs: gql`
+              type File {
+                filename: String!
+                mimetype: String!
+                encoding: String!
+              }
 
-        const { port } = await createServer({
-          typeDefs: gql`
-            type File {
-              filename: String!
-              mimetype: String!
-              encoding: String!
-            }
+              type Query {
+                uploads: [File]
+              }
 
-            type Query {
-              uploads: [File]
-            }
-
-            type Mutation {
-              singleUpload(file: Upload!): File!
-            }
-          `,
-          resolvers: {
-            Query: {
-              uploads: () => {},
-            },
-            Mutation: {
-              singleUpload: async (_, args) => {
-                expect((await args.file).stream).toBeDefined();
-                return args.file;
+              type Mutation {
+                singleUpload(file: Upload!): File!
+              }
+            `,
+            resolvers: {
+              Query: {
+                uploads: () => {},
+              },
+              Mutation: {
+                singleUpload: async (_, args) => {
+                  expect((await args.file).stream).toBeDefined();
+                  return args.file;
+                },
               },
             },
-          },
-        });
+          });
 
-        const body = new FormData();
+          const body = new FormData();
 
-        body.append(
-          'operations',
-          JSON.stringify({
-            query: `
+          body.append(
+            'operations',
+            JSON.stringify({
+              query: `
               mutation($file: Upload!) {
                 singleUpload(file: $file) {
                   filename
@@ -372,35 +391,36 @@ describe('apollo-server-koa', () => {
                 }
               }
             `,
-            variables: {
-              file: null,
-            },
-          }),
-        );
+              variables: {
+                file: null,
+              },
+            }),
+          );
 
-        body.append('map', JSON.stringify({ 1: ['variables.file'] }));
-        body.append('1', fs.createReadStream('package.json'));
+          body.append('map', JSON.stringify({ 1: ['variables.file'] }));
+          body.append('1', fs.createReadStream('package.json'));
 
-        try {
-          const resolved = await fetch(`http://localhost:${port}/graphql`, {
-            method: 'POST',
-            body: body as any,
-          });
-          const text = await resolved.text();
-          const response = JSON.parse(text);
+          try {
+            const resolved = await fetch(`http://localhost:${port}/graphql`, {
+              method: 'POST',
+              body: body as any,
+            });
+            const text = await resolved.text();
+            const response = JSON.parse(text);
 
-          expect(response.data.singleUpload).toEqual({
-            filename: 'package.json',
-            encoding: '7bit',
-            mimetype: 'application/json',
-          });
-        } catch (error) {
-          // This error began appearing randomly and seems to be a dev dependency bug.
-          // https://github.com/jaydenseric/apollo-upload-server/blob/18ecdbc7a1f8b69ad51b4affbd986400033303d4/test.js#L39-L42
-          if (error.code !== 'EPIPE') throw error;
-        }
-      });
-    });
+            expect(response.data.singleUpload).toEqual({
+              filename: 'package.json',
+              encoding: '7bit',
+              mimetype: 'application/json',
+            });
+          } catch (error) {
+            // This error began appearing randomly and seems to be a dev dependency bug.
+            // https://github.com/jaydenseric/apollo-upload-server/blob/18ecdbc7a1f8b69ad51b4affbd986400033303d4/test.js#L39-L42
+            if (error.code !== 'EPIPE') throw error;
+          }
+        });
+      },
+    );
 
     describe('errors', () => {
       it('returns thrown context error as a valid graphql result', async () => {
@@ -720,28 +740,6 @@ describe('apollo-server-koa', () => {
           resolvers,
           tracing: true,
           cacheControl: true,
-        });
-
-        const apolloFetch = createApolloFetch({ uri });
-        const result = await apolloFetch({
-          query: `{ books { title author } }`,
-        });
-        expect(result.data).toEqual({ books });
-        expect(result.extensions).toBeDefined();
-        expect(result.extensions.tracing).toBeDefined();
-      });
-
-      xit('applies tracing extension with engine enabled', async () => {
-        const { url: uri } = await createServer({
-          typeDefs,
-          resolvers,
-          tracing: true,
-          engine: {
-            apiKey: 'fake',
-            maxAttempts: 0,
-            endpointUrl: 'l',
-            reportErrorFunction: () => {},
-          },
         });
 
         const apolloFetch = createApolloFetch({ uri });

@@ -3,15 +3,16 @@ import {
   runHttpQuery,
   convertNodeHttpToRequest,
 } from 'apollo-server-core';
-import { json, RequestHandler } from 'micro';
-import * as url from 'url';
+import { send, json, RequestHandler } from 'micro';
+import url from 'url';
 import { IncomingMessage, ServerResponse } from 'http';
 
 import { MicroRequest } from './types';
+import { ValueOrPromise } from 'apollo-server-types';
 
 // Allowed Micro Apollo Server options.
 export interface MicroGraphQLOptionsFunction {
-  (req?: IncomingMessage): GraphQLOptions | Promise<GraphQLOptions>;
+  (req?: IncomingMessage): ValueOrPromise<GraphQLOptions>;
 }
 
 // Utility function used to set multiple headers on a response object.
@@ -66,7 +67,8 @@ export function graphqlMicro(
         error.statusCode = 500;
       }
 
-      throw error;
+      send(res, error.statusCode, error.message);
+      return undefined;
     }
   };
 

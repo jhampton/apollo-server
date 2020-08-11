@@ -1,29 +1,35 @@
-import * as Koa from 'koa';
-import * as corsMiddleware from '@koa/cors';
-import * as bodyParser from 'koa-bodyparser';
-import * as compose from 'koa-compose';
+import Koa, { Middleware } from 'koa';
+import corsMiddleware from '@koa/cors';
+import bodyParser from 'koa-bodyparser';
+import compose from 'koa-compose';
 import {
   renderPlaygroundPage,
   RenderPageOptions as PlaygroundRenderPageOptions,
 } from '@apollographql/graphql-playground-html';
-import { ApolloServerBase, formatApolloErrors } from 'apollo-server-core';
-import * as accepts from 'accepts';
-import * as typeis from 'type-is';
+import {
+  ApolloServerBase,
+  FileUploadOptions,
+  GraphQLOptions,
+  formatApolloErrors,
+  processFileUploads,
+} from 'apollo-server-core';
+import accepts from 'accepts';
+import typeis from 'type-is';
 
 import { graphqlKoa } from './koaApollo';
 
-import { processRequest as processFileUploads } from 'apollo-upload-server';
-
 export { GraphQLOptions, GraphQLExtension } from 'apollo-server-core';
-import { GraphQLOptions, FileUploadOptions } from 'apollo-server-core';
 
-export interface ServerRegistration {
-  app: Koa;
+export interface GetMiddlewareOptions {
   path?: string;
   cors?: corsMiddleware.Options | boolean;
   bodyParserConfig?: bodyParser.Options | boolean;
   onHealthCheck?: (ctx: Koa.Context) => Promise<any>;
   disableHealthCheck?: boolean;
+}
+
+export interface ServerRegistration extends GetMiddlewareOptions {
+  app: Koa;
 }
 
 const fileUploadMiddleware = (
@@ -32,7 +38,11 @@ const fileUploadMiddleware = (
 ) => async (ctx: Koa.Context, next: Function) => {
   if (typeis(ctx.req, ['multipart/form-data'])) {
     try {
-      ctx.request.body = await processFileUploads(ctx.req, uploadsConfig);
+      ctx.request.body = await processFileUploads(
+        ctx.req,
+        ctx.res,
+        uploadsConfig,
+      );
       return next();
     } catch (error) {
       if (error.status && error.expose) ctx.status = error.status;
@@ -74,19 +84,46 @@ export class ApolloServer extends ApolloServerBase {
     return true;
   }
 
-  public applyMiddleware({
-    app,
+  public applyMiddleware({ app, ...rest }: ServerRegistration) {
+    app.use(this.getMiddleware(rest));
+  }
+
+  // TODO: While Koa is Promise-aware, this API hasn't been historically, even
+  // though other integration's (e.g. Hapi) implementations of this method
+  // are `async`.  Therefore, this should become `async` in a major release in
+  // order to align the API with other integrations.
+  public getMiddleware({
     path,
     cors,
     bodyParserConfig,
     disableHealthCheck,
     onHealthCheck,
-  }: ServerRegistration) {
+  }: GetMiddlewareOptions = {}): Middleware {
     if (!path) path = '/graphql';
 
+    // Despite the fact that this `applyMiddleware` function is `async` in
+    // other integrations (e.g. Hapi), currently it is not for Koa (@here).
+    // That should change in a future version, but that would be a breaking
+    // change right now (see comment above this method's declaration above).
+    //
+    // That said, we do need to await the `willStart` lifecycle event which
+    // can perform work prior to serving a request.  While we could do this
+    // via awaiting in a Koa middleware, well kick off `willStart` right away,
+    // so hopefully it'll finish before the first request comes in.  We won't
+    // call `next` until it's ready, which will effectively yield until that
+    // work has finished.  Any errors will be surfaced to Koa through its own
+    // native Promise-catching facilities.
+    const promiseWillStart = this.willStart();
+    const middlewares = [];
+    middlewares.push(
+      middlewareFromPath(path, async (_ctx: Koa.Context, next: Function) => {
+        await promiseWillStart;
+        return next();
+      }),
+    );
+
     if (!disableHealthCheck) {
-      // uses same path as engine proxy, but is generally useful.
-      app.use(
+      middlewares.push(
         middlewareFromPath(
           '/.well-known/apollo/server-health',
           (ctx: Koa.Context) => {
@@ -111,30 +148,36 @@ export class ApolloServer extends ApolloServerBase {
     }
 
     let uploadsMiddleware;
-    if (this.uploadsConfig) {
+    if (this.uploadsConfig && typeof processFileUploads === 'function') {
       uploadsMiddleware = fileUploadMiddleware(this.uploadsConfig, this);
     }
 
     this.graphqlPath = path;
 
     if (cors === true) {
-      app.use(middlewareFromPath(path, corsMiddleware()));
+      middlewares.push(middlewareFromPath(path, corsMiddleware()));
     } else if (cors !== false) {
-      app.use(middlewareFromPath(path, corsMiddleware(cors)));
+      middlewares.push(middlewareFromPath(path, corsMiddleware(cors)));
     }
 
     if (bodyParserConfig === true) {
-      app.use(middlewareFromPath(path, bodyParser()));
+      middlewares.push(middlewareFromPath(path, bodyParser()));
     } else if (bodyParserConfig !== false) {
-      app.use(middlewareFromPath(path, bodyParser(bodyParserConfig)));
+      middlewares.push(middlewareFromPath(path, bodyParser(bodyParserConfig)));
     }
 
     if (uploadsMiddleware) {
-      app.use(middlewareFromPath(path, uploadsMiddleware));
+      middlewares.push(middlewareFromPath(path, uploadsMiddleware));
     }
 
-    app.use(
+    middlewares.push(
       middlewareFromPath(path, (ctx: Koa.Context, next: Function) => {
+        if (ctx.request.method === 'OPTIONS') {
+          ctx.status = 204;
+          ctx.body = '';
+          return;
+        }
+
         if (this.playgroundOptions && ctx.request.method === 'GET') {
           // perform more expensive content-type check only if necessary
           const accept = accepts(ctx.req);
@@ -158,17 +201,12 @@ export class ApolloServer extends ApolloServerBase {
             return;
           }
         }
-        return graphqlKoa(this.createGraphQLServerOptions.bind(this))(
-          ctx,
-          next,
-        );
+
+        return graphqlKoa(() => {
+          return this.createGraphQLServerOptions(ctx);
+        })(ctx, next);
       }),
     );
+    return compose(middlewares);
   }
 }
-
-export const registerServer = () => {
-  throw new Error(
-    'Please use server.applyMiddleware instead of registerServer. This warning will be removed in the next release',
-  );
-};

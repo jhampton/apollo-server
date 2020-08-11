@@ -1,13 +1,14 @@
-import * as Koa from 'koa';
+import Koa from 'koa';
 import {
   GraphQLOptions,
   HttpQueryError,
   runHttpQuery,
   convertNodeHttpToRequest,
 } from 'apollo-server-core';
+import { ValueOrPromise } from 'apollo-server-types';
 
 export interface KoaGraphQLOptionsFunction {
-  (ctx: Koa.Context): GraphQLOptions | Promise<GraphQLOptions>;
+  (ctx: Koa.Context): ValueOrPromise<GraphQLOptions>;
 }
 
 export interface KoaHandler {

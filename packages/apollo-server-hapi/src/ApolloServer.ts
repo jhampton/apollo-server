@@ -1,10 +1,9 @@
-import * as hapi from 'hapi';
+import hapi from 'hapi';
 import { parseAll } from 'accept';
 import {
   renderPlaygroundPage,
   RenderPageOptions as PlaygroundRenderPageOptions,
 } from '@apollographql/graphql-playground-html';
-import { processRequest as processFileUploads } from 'apollo-upload-server';
 
 import { graphqlHapi } from './hapiApollo';
 
@@ -13,13 +12,21 @@ import {
   ApolloServerBase,
   GraphQLOptions,
   FileUploadOptions,
+  processFileUploads,
 } from 'apollo-server-core';
 
 function handleFileUploads(uploadsConfig: FileUploadOptions) {
-  return async (request: hapi.Request) => {
-    if (request.mime === 'multipart/form-data') {
+  return async (request: hapi.Request, _h?: hapi.ResponseToolkit) => {
+    if (
+      typeof processFileUploads === 'function' &&
+      request.mime === 'multipart/form-data'
+    ) {
       Object.defineProperty(request, 'payload', {
-        value: await processFileUploads(request, uploadsConfig),
+        value: await processFileUploads(
+          request.raw.req,
+          request.raw.res,
+          uploadsConfig,
+        ),
         writable: false,
       });
     }
@@ -49,9 +56,12 @@ export class ApolloServer extends ApolloServerBase {
     app,
     cors,
     path,
+    route,
     disableHealthCheck,
     onHealthCheck,
   }: ServerRegistration) {
+    await this.willStart();
+
     if (!path) path = '/graphql';
 
     await app.ext({
@@ -61,7 +71,7 @@ export class ApolloServer extends ApolloServerBase {
           return h.continue;
         }
 
-        if (this.uploadsConfig) {
+        if (this.uploadsConfig && typeof processFileUploads === 'function') {
           await handleFileUploads(this.uploadsConfig)(request);
         }
 
@@ -122,9 +132,12 @@ export class ApolloServer extends ApolloServerBase {
       options: {
         path,
         graphqlOptions: this.createGraphQLServerOptions.bind(this),
-        route: {
-          cors: cors !== undefined ? cors : true,
-        },
+        route:
+          route !== undefined
+            ? route
+            : {
+                cors: cors !== undefined ? cors : true,
+              },
       },
     });
 
@@ -136,13 +149,8 @@ export interface ServerRegistration {
   app?: hapi.Server;
   path?: string;
   cors?: boolean | hapi.RouteOptionsCors;
+  route?: hapi.RouteOptions;
   onHealthCheck?: (request: hapi.Request) => Promise<any>;
   disableHealthCheck?: boolean;
   uploads?: boolean | Record<string, any>;
 }
-
-export const registerServer = () => {
-  throw new Error(
-    'Please use server.applyMiddleware instead of registerServer. This warning will be removed in the next release',
-  );
-};

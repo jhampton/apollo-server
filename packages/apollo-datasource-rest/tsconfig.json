@@ -1,17 +1,15 @@
 {
-  "extends": "../../tsconfig",
+  "extends": "../../tsconfig.base",
   "compilerOptions": {
     "rootDir": "./src",
-    "outDir": "./dist",
-    "removeComments": true,
-    "strict": true,
-    "noImplicitAny": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUnusedParameters": true,
-    "noUnusedLocals": true,
-    "types": ["node"]
+    "outDir": "./dist"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "**/__tests__/*", "**/__mocks__/*"]
+  "exclude": ["**/__tests__", "**/__mocks__"],
+  "references": [
+    { "path": "../apollo-datasource" },
+    { "path": "../apollo-server-caching" },
+    { "path": "../apollo-server-errors" },
+    { "path": "../apollo-server-types" },
+  ]
 }

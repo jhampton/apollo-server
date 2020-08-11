@@ -1,56 +1,26 @@
 {
   "name": "apollo-server-cache-redis",
-  "version": "0.1.0",
-  "author": "opensource@apollographql.com",
+  "version": "1.2.2",
+  "author": "Apollo <opensource@apollographql.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/apollographql/apollo-server/tree/master/packages/apollo-server-cache-redis"
+    "url": "https://github.com/apollographql/apollo-server",
+    "directory": "packages/apollo-server-cache-redis"
   },
   "homepage": "https://github.com/apollographql/apollo-server#readme",
   "bugs": {
     "url": "https://github.com/apollographql/apollo-server/issues"
   },
-  "scripts": {
-    "clean": "rm -rf dist",
-    "compile": "tsc",
-    "coverage": "jest --coverage",
-    "prepublish": "npm run clean && npm run compile",
-    "test": "jest --verbose"
-  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "engines": {
-    "node": ">=6"
+    "node": ">=8"
   },
   "dependencies": {
-    "apollo-server-caching": "0.1.0",
-    "apollo-server-env": "2.0.0",
-    "dataloader": "^1.4.0",
-    "redis": "^2.8.0"
-  },
-  "devDependencies": {
-    "@types/redis": "2.8.6",
-    "redis-mock": "0.29.0"
-  },
-  "jest": {
-    "testEnvironment": "node",
-    "setupFiles": [
-      "<rootDir>/node_modules/apollo-server-env/dist/index.js"
-    ],
-    "transform": {
-      "^.+\\.(ts|js)$": "ts-jest"
-    },
-    "moduleFileExtensions": [
-      "ts",
-      "js",
-      "json"
-    ],
-    "testRegex": "src/__tests__/.*$",
-    "globals": {
-      "ts-jest": {
-        "skipBabel": true
-      }
-    }
+    "apollo-server-caching": "file:../apollo-server-caching",
+    "apollo-server-env": "file:../apollo-server-env",
+    "dataloader": "^2.0.0",
+    "ioredis": "^4.0.0"
   }
 }
